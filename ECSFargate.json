@@ -1,0 +1,239 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Creates an ECS Cluster, ECS Task, and schedules the task on the ECS Cluster.  This template assumes that the ADFS-IAM-IDC-Sync-Setup CFN has already been deployed.",
+  "Parameters" : {
+    "VPCID":{
+        "Description": "Select the VPC which has access to on-premise domain controllers and Internet access.",
+        "Type": "AWS::EC2::VPC::Id",
+        "ConstraintDescription": "Must be a valid VPC."
+    },
+    "VPCCidrRange":{
+      "Description": "Specify the CIDR range for the VPC.",
+      "Type": "String",
+      "Default": "10.0.0.0/16"
+  },
+    "SubnetId1":{
+    "Description": "Select a private subnet.",
+    "Type": "AWS::EC2::Subnet::Id",
+    "MinLength": "1",
+    "MaxLength": "255",
+    "ConstraintDescription": "Must be a valid Private Subnet."
+    },
+  "SubnetId2":{
+    "Description": "Select a second private subnet.",
+    "Type": "AWS::EC2::Subnet::Id",
+    "MinLength": "1",
+    "MaxLength": "255",
+    "ConstraintDescription": "Must be a valid Private Subnet."
+  },
+  "ECSTaskName":{
+    "Description": "The name that should be assigned to the SCIM Sync task definition.",
+    "Type": "String",
+    "Default": "scimsync-task"
+  },
+  "ECSClusterName":{
+    "Description": "The name that should be assigned to the ECS Fargate cluster.",
+    "Type": "String",
+    "Default": "scimsync-cluster"
+  }
+},
+"Metadata" : {
+    "AWS::CloudFormation::Interface" : {
+      "ParameterGroups" : [       {
+        "Label" : { "default" : "Network Configuration" },
+        "Parameters" : [ "VPCID", "SubnetId1", "SubnetId2" ]
+      },
+      {
+        "Label" : { "default": "Container Information" },
+        "Parameters" : [ "ECSClustername", "ECSTaskName" ]
+      } ],
+      "ParameterLabels" : {
+        "VPCID" : { "default" : "VPC" },
+        "SubnetId1": {"default": "Private Subnet 1"},
+        "SubnetId2": {"default": "Private Subnet 2"},
+        "ECSClusterName": {"default": "ECS Cluster Name"},
+        "ECSTaskName": {"default": "ECS Task Name"}
+      }
+    }
+  },
+"Rules":{
+    "IsSubnetInsideVPC": {
+        "Assertions": [
+          {
+            "Assert": {
+              "Fn::EachMemberEquals" : [
+                {
+                  "Fn::ValueOfAll": [
+                    "AWS::EC2::Subnet::Id",
+                    "VpcId"
+                  ]
+                },
+                {
+                  "Ref": "VPCID"
+                }
+              ]
+            },
+            "AssertDescription": "One or more subnets you selected are not in the VPC"
+          }
+        ]
+      }
+},
+"Resources":{
+    "ECSCluster": {
+        "Type": "AWS::ECS::Cluster",
+        "Properties": {
+          "ClusterName": { "Ref" : "ECSClusterName" },
+          "CapacityProviders": [
+            "FARGATE",
+            "FARGATE_SPOT"
+          ],
+          "ClusterSettings": [
+            {
+              "Name": "containerInsights",
+              "Value": "disabled"
+            }
+          ],
+          "Configuration": {
+            "ExecuteCommandConfiguration": {
+              "Logging": "DEFAULT"
+            }
+          },
+          "ServiceConnectDefaults": {
+            "Namespace": { "Ref" : "ECSClusterName" }
+          },
+          "Tags": []
+        }
+      },
+    "ecsSCIMSyncTask":{
+  "Type" : "AWS::ECS::TaskDefinition",
+  "Properties" : {
+      "ContainerDefinitions" : [
+        {
+            "Name": "scimsync-task",
+            "Image": { "Fn::Sub": "${AWS::AccountId}.dkr.ecr.us-east-2.amazonaws.com/scimsync:latest"},
+            "Cpu": 0,
+            "Essential": true,
+            "EntryPoint": [
+                "C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe"
+            ],
+            "Command": [
+                "c:\\\\windows\\\\temp\\\\UserAndGroupSCIM-Sync.ps1"
+            ],
+            "LogConfiguration": {
+                "LogDriver": "awslogs",
+                "Options": {
+                    "awslogs-create-group": "true",
+                    "awslogs-group": { "Fn::Sub": "/ecs/${ECSTaskName}"},
+                    "awslogs-region": { "Fn::Sub": "${AWS::Region}"},
+                    "awslogs-stream-prefix": "ecs"
+                }
+            }
+        }
+    ],
+    "Cpu": "1024",
+    "Memory": "3072",
+      "Family": { "Ref" : "ECSTaskName" },
+      "NetworkMode": "awsvpc",
+      "RequiresCompatibilities" : [ "FARGATE" ],
+      "RuntimePlatform": {
+        "CpuArchitecture": "X86_64",
+        "OperatingSystemFamily": "WINDOWS_SERVER_2019_CORE"
+    },
+      "TaskRoleArn": { "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/iam-idc-scim-sync-role"},
+      "ExecutionRoleArn": { "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/iam-idc-scim-sync-role"}
+    }  
+},
+    "eventRuleScheduledECSTask": {
+        "Type": "AWS::Events::Rule",
+        "Properties": {
+          "Description": "Execute a sync every 12 hours",
+          "EventBusName": "default",
+          "Name": "scimsync-scheduledtask",
+          "ScheduleExpression": "rate(12 hours)",
+          "State": "ENABLED",
+          "Targets": [{
+            "Id": "scimsync-target",
+            "Arn": { "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ECSClusterName}"},
+            "RoleArn": { "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/ecsEventsScimSyncRole"},
+            "Input": "{}",
+            "EcsParameters": {
+              "TaskDefinitionArn": { "Ref": "ecsSCIMSyncTask"},
+              "TaskCount": 1,
+              "LaunchType": "FARGATE",
+              "NetworkConfiguration": {
+                "AwsVpcConfiguration": {
+                  "Subnets": [{ "Ref" : "SubnetId1" }, { "Ref" : "SubnetId2" }],
+                  "SecurityGroups": [{ "Fn::GetAtt" : [ "ecsSCIMSyncTaskSG", "GroupId" ] }],
+                  "AssignPublicIp": "DISABLED"
+                }
+              },
+              "PlatformVersion": "LATEST",
+              "EnableECSManagedTags": false,
+              "EnableExecuteCommand": false
+            }
+          }]
+        },
+        "DependsOn": ["ecsEventsRoleDef","ecsSCIMSyncTaskSG","ecsSCIMSyncTask","ECSCluster"]
+      },
+      "ecsEventsRoleDef": {
+        "Type" : "AWS::IAM::Role",
+        "Properties" : {
+            "AssumeRolePolicyDocument" : {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Principal": {
+                          "Service": [
+                              "events.amazonaws.com"
+                          ]
+                      },
+                      "Action": [
+                          "sts:AssumeRole"
+                      ]
+                  }
+              ]
+          },
+            "Description" : "Grants ability to for Events to run ECS tasks.",
+            "Path" : "/",
+            "ManagedPolicyArns": ["arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceEventsRole"],            
+            "RoleName" : "ecsEventsScimSyncRole"
+          }
+      },
+      "ecsSCIMSyncTaskSG":{
+        "Type" : "AWS::EC2::SecurityGroup",
+        "Properties" : {
+            "GroupDescription" : "Security rule for the SCIM Sync ECS task which does not require inbound communication.",
+            "GroupName" : "ecsSCIMSyncTask-SG",
+            "SecurityGroupEgress" : [{
+                "IpProtocol" : "tcp",
+                "FromPort" : "443",
+                "ToPort" : "443",
+                "CidrIp" : "0.0.0.0/0",
+                "Description" : "Support for calls to AWS APIs like AWS Secrets Manager, AWS Systems Manager Parameter Store, and the AWS IAM Identity Center SCIM endpoint"
+            },
+            {
+              "IpProtocol" : "-1",
+              "CidrIp" : { "Fn::Sub": "${VPCCidrRange}" },
+              "Description" : "Permit communication to services on the local network"
+          },
+          {
+            "IpProtocol" : "tcp",
+            "FromPort" : "9389",
+            "ToPort" : "9389",
+            "CidrIp" : "0.0.0.0/0",
+            "Description" : "Retrieve AD group details"
+        },
+        {
+          "IpProtocol" : "tcp",
+          "FromPort" : "3268",
+          "ToPort" : "3268",
+          "CidrIp" : "0.0.0.0/0",
+          "Description" : "Communication with the AD global catalog"
+      }
+          ],
+            "VpcId" : {"Ref": "VPCID"}
+          }
+      }      
+}
+}
