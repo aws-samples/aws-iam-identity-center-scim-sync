@@ -4,8 +4,8 @@
 This repo contains a PowerShell script and AWS CloudFormation templates used to establish a container-based environment to periodically sync Active Directory / LDAP users and groups to AWS IAM Identity Center using SCIM where customers are federating with a service that does not natively support SCIM.
  - This repo is based on the steps outlined in this [article](URL-to-be-provided) updated July 2023.
 
-##Architectural Drawing
-![AWS Fargate runs the PowerShell script from a container image in Amazon Elastic Container Registry which retrieves credentials from AWS Secrets Manager, gathers runtime parameters from AWS Systems Manager Parameter Store, queries the on-premises Active Directory, and uses SCIM to perform CRUD actions on AWS IAM Identity Center users and groups. ](https://github.com/aws-samples/aws-iam-identity-center-scim-sync/blob/main/images/architectural-diagram.jpg?raw=true)
+## Architectural Drawing
+![AWS Fargate runs the PowerShell script from a container image in Amazon Elastic Container Registry which retrieves credentials from AWS Secrets Manager, gathers runtime parameters from AWS Systems Manager Parameter Store, queries the on-premises Active Directory, and uses SCIM to perform CRUD actions on AWS IAM Identity Center users and groups.](images/architectural-diagram.jpg)
 
 
 ## July 2023
