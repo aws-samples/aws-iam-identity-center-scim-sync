@@ -1,6 +1,10 @@
 ## Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 ## SPDX-License-Identifier: MIT-0
 
+param(
+    $awsRegion = "us-east-2"
+)
+
 function Format-UserInfo {
     param (
         $user, $iamidcUserID, $sidMatchFound
@@ -42,8 +46,6 @@ function Format-UserInfo {
 }
 
 #Retrieve URI and AD Group Name from AWS SSM Parameter Store
-$awsRegion = "us-east-2"
-
 $uri = (Get-SSMParameter -Name /IAM-IDC/SCIM-URI -WithDecryption $true -Region $awsRegion).Value
 $uriUsers = $uri + "Users"
 $uriGroups = $uri + "Groups"
@@ -104,6 +106,24 @@ foreach ($adGroup in $adGroups)
     }
 }
 
+# Install requirements
+$requirements = @(
+    "ActiveDirectory"
+    "AWS.Tools.SecretsManager",
+    "AWS.Tools.SimpleSystemsManagement"
+)
+
+foreach ($requirement in $requirements) {
+    try {
+        Write-Debug "Importing ${requirement}..."
+        Import-Module $requirement -ErrorAction Stop -WarningAction Stop -Force
+    }
+    catch {
+        Install-Module $requirement -Force -Scope CurrentUser
+        Import-Module $requirement  -ErrorAction Stop -Force
+    }
+}
+
 #Now retrieve a list of all groups in IAM IDC.  This will be used later to sync user membership
 $responseGroupsGet = Invoke-RestMethod -Uri $uriGroups -Authentication Bearer -Method Get -Token $scimToken -Headers @{"Cache-Control"="no-cache"}
 $iamIDCGroups = $responseGroupsGet.Resources
@@ -137,7 +157,7 @@ foreach ($groupMember in $groupMembers)
     if ($sidMatchFound)
     {
         #Update existing IAM IDC user
-        $jsonBody = Format-UserInfo $user  $iamidcUserID  $sidMatchFound
+        $jsonBody = Format-UserInfo -user $user -iamidcUserID  $iamidcUserID -sidMatchFound  $sidMatchFound
         $updateURI = $uriUsers + "/" + $iamidcUserID
         $responseUserPut = Invoke-RestMethod -Uri $updateURI -Authentication Bearer -Method Put -Body $jsonBody -Token $scimToken -Headers @{"Cache-Control"="no-cache"}
         $responseUserPut
@@ -145,7 +165,7 @@ foreach ($groupMember in $groupMembers)
     else
     {
         #Create new IAM IDC user
-        $jsonBody = Format-UserInfo $user  $iamidcUserID  $sidMatchFound
+        $jsonBody = Format-UserInfo -user $user -iamidcUserID  $iamidcUserID -sidMatchFound  $sidMatchFound
         $responseUserPost = Invoke-RestMethod -Uri $uriUsers -Authentication Bearer -Method Post -Body $jsonBody -Token $scimToken -Headers @{"Cache-Control"="no-cache"}
         $responseUserPost
 
