@@ -1,6 +1,28 @@
 ## Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 ## SPDX-License-Identifier: MIT-0
 
+param(
+    $awsRegion = "us-east-2"
+)
+
+# Install requirements
+$requirements = @(
+    "ActiveDirectory"
+    "AWS.Tools.SecretsManager",
+    "AWS.Tools.SimpleSystemsManagement"
+)
+
+foreach ($requirement in $requirements) {
+    try {
+        Write-Debug "Importing ${requirement}..."
+        Import-Module $requirement -ErrorAction Stop -Force
+    }
+    catch {
+        Install-Module $requirement -Force -Scope CurrentUser
+        Import-Module $requirement  -ErrorAction Stop -Force
+    }
+}
+
 function Format-UserInfo {
     param (
         $user, $iamidcUserID, $sidMatchFound
@@ -42,8 +64,6 @@ function Format-UserInfo {
 }
 
 #Retrieve URI and AD Group Name from AWS SSM Parameter Store
-$awsRegion = "us-east-2"
-
 $uri = (Get-SSMParameter -Name /IAM-IDC/SCIM-URI -WithDecryption $true -Region $awsRegion).Value
 $uriUsers = $uri + "Users"
 $uriGroups = $uri + "Groups"

@@ -110,14 +110,14 @@
       "ContainerDefinitions" : [
         {
             "Name": "scimsync-task",
-            "Image": { "Fn::Sub": "${AWS::AccountId}.dkr.ecr.us-east-2.amazonaws.com/scimsync:latest"},
+            "Image": { "Fn::Sub": "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/scimsync:latest"},
             "Cpu": 0,
             "Essential": true,
             "EntryPoint": [
                 "C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe"
             ],
             "Command": [
-                "c:\\\\windows\\\\temp\\\\UserAndGroupSCIM-Sync.ps1"
+                "c:\\\\windows\\\\temp\\\\UserAndGroupSCIM-Sync.ps1", "-awsRegion", {"Fn::Sub": "${AWS::Region}"}
             ],
             "LogConfiguration": {
                 "LogDriver": "awslogs",
